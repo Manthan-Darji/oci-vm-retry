@@ -1,0 +1,45 @@
+name: OCI VM retry
+
+# Every 5 minutes, try to grab the free ARM slot. Each run loops ~5 minutes
+# attempting roughly every 30 seconds (GitHub's schedule trigger can't go below
+# every-5-minutes, so the loop inside the run gives us the fast pace).
+# The attempt script is idempotent: if an instance already exists it does nothing.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # manual "Run workflow" button for testing
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OCI CLI
+        run: |
+          pip install --quiet oci-cli
+          mkdir -p ~/.oci
+          printf '%s' "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=$HOME/.oci/oci_api_key.pem
+          EOF
+          chmod 600 ~/.oci/config
+
+      - name: Attempt launch (loops ~5 min, ~30s pace)
+        env:
+          SUPPRESS_LABEL_WARNING: "True"
+        run: |
+          for i in $(seq 1 9); do
+            OUT=$(bash scripts/oci-attempt.sh)
+            echo "$OUT"
+            echo "$OUT" | grep -q "LAUNCHED" && break
+            echo "$OUT" | grep -q "SKIP" && break
+            sleep 30
+          done
