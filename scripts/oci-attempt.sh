@@ -13,12 +13,12 @@ SUBNET="ocid1.subnet.oc1.ap-hyderabad-1.aaaaaaaasmgtmiy3hlkdo34az65slb2wwdu6g62e
 SSHPUB="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINaBZjCx2Q1txVKJF6Kmj37Gim+aXmWSgqR6eqUsuUZ3 money-machine"
 META=$(printf '{"ssh_authorized_keys":"%s"}' "$SSHPUB")
 
-# 1. Idempotency: if an instance already exists (launched by any poller), do nothing.
+# 1. Idempotency: only skip if the real money-machine (A1) already exists.
+# interim-micro is a separate box and must NOT stop the A1 hunt.
 EXISTING_JSON=$(oci compute instance list --compartment-id "$COMP" 2>/dev/null)
-EXISTING_OCID=$(printf '%s' "$EXISTING_JSON" | grep -o '"id": "ocid1.instance[^"]*"' | head -1 | cut -d'"' -f4)
-EXISTING_STATE=$(printf '%s' "$EXISTING_JSON" | grep -o '"lifecycle-state": "[A-Z]*"' | head -1 | cut -d'"' -f4)
-if [ -n "$EXISTING_OCID" ] && [ "$EXISTING_STATE" != "TERMINATED" ] && [ "$EXISTING_STATE" != "TERMINATING" ]; then
-  echo "SKIP: instance already exists: $EXISTING_OCID ($EXISTING_STATE)"
+EXISTING_OCID=$(printf '%s' "$EXISTING_JSON" | grep -B2 '"display-name": "money-machine"' | grep -o '"id": "ocid1.instance[^"]*"' | head -1 | cut -d'"' -f4)
+if [ -n "$EXISTING_OCID" ]; then
+  echo "SKIP: money-machine already exists: $EXISTING_OCID"
   exit 0
 fi
 
