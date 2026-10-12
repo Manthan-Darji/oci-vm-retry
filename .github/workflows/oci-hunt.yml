@@ -1,0 +1,80 @@
+name: OCI VM hunt (12GB + 6GB)
+
+# Two independent requesters run in parallel:
+#   hunt-12gb fights for money-machine      (2 OCPU / 12GB), first request at t+0s
+#   hunt-6gb  fights for money-machine-mini (1 OCPU / 6GB),  first request at t+15s
+# Each then requests every 30s, so combined they interleave every 15s:
+# 12GB, 15s, 6GB, 15s, 12GB, ... On 429 the affected requester widens its own
+# gap in +15s steps (cap 120s) and narrows back on clean responses.
+# Jobs loop ~55 min per run; the 5-min schedule + per-job concurrency queue
+# keeps coverage near-continuous. All failure handling lives in
+# scripts/oci-hunt.sh (exists-check, capacity, 429, quota, auth, transient,
+# clean budget exit). The local server loop also hunts the 12GB; every
+# poller checks before launching, so no duplicates.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  hunt-12gb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 58
+    concurrency:
+      group: oci-hunt-12gb
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OCI CLI
+        run: |
+          pip install --quiet oci-cli
+          mkdir -p ~/.oci
+          printf '%s' "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=$HOME/.oci/oci_api_key.pem
+          EOF
+          chmod 600 ~/.oci/config
+      - name: Hunt 12GB (money-machine)
+        env:
+          SUPPRESS_LABEL_WARNING: "True"
+          TARGET: big
+          INITIAL_DELAY: "0"
+          BUDGET_SECS: "3300"
+        run: bash scripts/oci-hunt.sh
+
+  hunt-6gb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 58
+    concurrency:
+      group: oci-hunt-6gb
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OCI CLI
+        run: |
+          pip install --quiet oci-cli
+          mkdir -p ~/.oci
+          printf '%s' "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=$HOME/.oci/oci_api_key.pem
+          EOF
+          chmod 600 ~/.oci/config
+      - name: Hunt 6GB (money-machine-mini)
+        env:
+          SUPPRESS_LABEL_WARNING: "True"
+          TARGET: mini
+          INITIAL_DELAY: "15"
+          BUDGET_SECS: "3300"
+        run: bash scripts/oci-hunt.sh
