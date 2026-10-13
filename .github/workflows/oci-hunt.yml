@@ -13,7 +13,7 @@ name: OCI VM hunt (12GB + 6GB)
 # poller checks before launching, so no duplicates.
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 jobs:
